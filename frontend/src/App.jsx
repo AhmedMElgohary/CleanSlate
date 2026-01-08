@@ -2,7 +2,9 @@ import { useState } from 'react'
 import './App.css'
 
 function App() {
-  // I track the fileId to ensure we are editing the correct user session
+  // CONFIGURATION: This points to the backend (relative path for Vercel)
+  const API_BASE_URL = "/api";
+  
   const [fileId, setFileId] = useState(null)
   const [file, setFile] = useState(null)
   const [data, setData] = useState(null)
@@ -20,7 +22,7 @@ function App() {
     setError("");
     setMessage("");
     setData(null);
-    setFileId(null); // Reset the ticket when a new file is picked
+    setFileId(null);
   };
 
   const handleUpload = async () => {
@@ -37,7 +39,7 @@ function App() {
     formData.append("file", file);
 
     try {
-      const response = await fetch("http://127.0.0.1:8000/upload", {
+      const response = await fetch(`${API_BASE_URL}/upload`, {
         method: "POST",
         body: formData,
       });
@@ -46,7 +48,7 @@ function App() {
 
       if (response.ok) {
         setData(result);
-        setFileId(result.file_id); // I save the session ticket here!
+        setFileId(result.file_id);
       } else {
         setError(result.detail || "Upload failed");
       }
@@ -64,10 +66,10 @@ function App() {
     setError("");
 
     try {
-      const response = await fetch("http://127.0.0.1:8000/process", {
+      // FIX: This now points to /process instead of /upload
+      const response = await fetch(`${API_BASE_URL}/process`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        // I send the file_id so the backend knows which file to fix
         body: JSON.stringify({ 
             file_id: fileId, 
             query: query 
@@ -101,8 +103,8 @@ function App() {
   const handleDownload = () => {
     if (!fileId) return;
     
-    // I use the fileId to request the specific clean file
-    const url = `http://127.0.0.1:8000/download/${fileId}`;
+    // FIX: Now uses the API_BASE_URL variable
+    const url = `${API_BASE_URL}/download/${fileId}`;
     const link = document.createElement('a');
     link.href = url;
     link.setAttribute('download', `clean_data.csv`);

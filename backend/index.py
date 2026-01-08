@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 # I am loading the environment variables to keep my API keys secure
 load_dotenv()
 
-app = FastAPI()
+app = FastAPI(docs_url="/api/docs", openapi_url="/api/openapi.json")
 
 # Security Config: I'm allowing all origins for now to make development easy
 app.add_middleware(
