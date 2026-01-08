@@ -1,30 +1,28 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import './App.css'
 
 function App() {
-  // State for File Upload
+  // I track the fileId to ensure we are editing the correct user session
+  const [fileId, setFileId] = useState(null)
   const [file, setFile] = useState(null)
   const [data, setData] = useState(null)
   const [uploading, setUploading] = useState(false)
   
-  // State for AI Processing
+  // AI Interaction State
   const [query, setQuery] = useState("")
   const [processing, setProcessing] = useState(false)
   const [message, setMessage] = useState("")
-  
-  // State for Errors
   const [error, setError] = useState("")
 
-  // 1. Handle File Selection
   const handleFileChange = (e) => {
     const selectedFile = e.target.files[0];
     setFile(selectedFile);
     setError("");
-    setMessage(""); // Clear old success messages
-    setData(null);  // Clear old data when a new file is picked
+    setMessage("");
+    setData(null);
+    setFileId(null); // Reset the ticket when a new file is picked
   };
 
-  // 2. Handle Upload Button Click
   const handleUpload = async () => {
     if (!file) {
       setError("Please select a file first.");
@@ -48,6 +46,7 @@ function App() {
 
       if (response.ok) {
         setData(result);
+        setFileId(result.file_id); // I save the session ticket here!
       } else {
         setError(result.detail || "Upload failed");
       }
@@ -58,7 +57,6 @@ function App() {
     setUploading(false);
   };
 
-  // 3. Handle AI Command (The Magic Fix)
   const handleProcess = async () => {
     if (!query) return;
     setProcessing(true);
@@ -69,7 +67,11 @@ function App() {
       const response = await fetch("http://127.0.0.1:8000/process", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ filename: file.name, query: query }),
+        // I send the file_id so the backend knows which file to fix
+        body: JSON.stringify({ 
+            file_id: fileId, 
+            query: query 
+        }),
       });
 
       const result = await response.json();
@@ -78,7 +80,6 @@ function App() {
         if (result.error) {
            setError(result.error);
         } else {
-           // Update the UI with the NEW cleaned data
            setData(prev => ({
              ...prev, 
              preview: result.preview, 
@@ -86,7 +87,7 @@ function App() {
              columns: result.columns
            }));
            setMessage(result.message);
-           setQuery(""); // Clear the input box
+           setQuery("");
         }
       } else {
         setError(result.detail || "Processing failed");
@@ -97,15 +98,14 @@ function App() {
     setProcessing(false);
   };
 
-  // 4. Handle Download
   const handleDownload = () => {
-    if (!data?.filename) return;
+    if (!fileId) return;
     
-    // We trigger a browser download by creating a hidden link and clicking it programmatically
-    const url = `http://127.0.0.1:8000/download/${data.filename}`;
+    // I use the fileId to request the specific clean file
+    const url = `http://127.0.0.1:8000/download/${fileId}`;
     const link = document.createElement('a');
     link.href = url;
-    link.setAttribute('download', `clean_${data.filename}`);
+    link.setAttribute('download', `clean_data.csv`);
     document.body.appendChild(link);
     link.click();
     link.parentNode.removeChild(link);
@@ -115,7 +115,7 @@ function App() {
     <div className="container">
       <h1>CleanSlate 🧹</h1>
       
-      {/* Upload Section */}
+      {/* Upload Box */}
       <div className="upload-box">
         <input type="file" accept=".csv" onChange={handleFileChange} />
         <button onClick={handleUpload} disabled={uploading}>
@@ -123,20 +123,17 @@ function App() {
         </button>
       </div>
 
-      {/* Error Message */}
       {error && <p style={{ color: "#ef4444", fontWeight: "bold" }}>{error}</p>}
 
-      {/* Results Section */}
       {data && (
         <div className="results">
-          <h3>File Analysis: {data.filename}</h3>
+          <h3>File: {data.filename}</h3>
           <p>Rows: <strong>{data.total_rows}</strong> | Columns: <strong>{data.total_columns}</strong></p>
           
-          {/* AI Chat Interface */}
           <div className="ai-box" style={{ margin: "20px 0", display: "flex", gap: "10px" }}>
             <input 
               type="text" 
-              placeholder="Ask AI: 'Remove empty rows' or 'Remove duplicates'" 
+              placeholder="Ask AI: 'Remove empty rows'..." 
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               style={{ flex: 1, padding: "10px", borderRadius: "6px", border: "1px solid #334155", color: "#0f172a" }}
@@ -146,21 +143,18 @@ function App() {
             </button>
           </div>
           
-          {/* Success Message */}
-          {message && <p style={{ color: "#4ade80", fontWeight: "bold" }}>✅ {message}</p>}
-          
-          {/* NEW: Download Section */}
           <div style={{ marginTop: "20px", display: "flex", justifyContent: "flex-end" }}>
             <button 
               onClick={handleDownload}
-              style={{ backgroundColor: "#10b981", color: "white" }} // Green color for 'Success/Download'
+              style={{ backgroundColor: "#10b981", color: "white" }}
             >
               ⬇️ Download Clean CSV
             </button>
           </div>
-          
+
+          {message && <p style={{ color: "#4ade80", fontWeight: "bold", marginTop: "10px" }}>✅ {message}</p>}
+
           <h4>Data Preview:</h4>
-          {/* Scrollable Table Container */}
           <div style={{ overflowX: "auto" }}>
             <table border="1" cellPadding="5" style={{ width: "100%", borderCollapse: "collapse" }}>
                <thead>

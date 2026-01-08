@@ -1,66 +1,72 @@
+import os
+import uuid
+import shutil
 from fastapi import FastAPI, File, UploadFile, HTTPException
+from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.background import BackgroundTasks
 from pydantic import BaseModel
 import pandas as pd
-import io
-import os
 from groq import Groq
-from fastapi.responses import StreamingResponse
 from dotenv import load_dotenv
 
+# I am loading the environment variables to keep my API keys secure
 load_dotenv()
 
-# Initialize the application
 app = FastAPI()
 
-# Security configuration: Allow the Frontend to communicate with this Backend
-# TODO: In production, limit this to the specific domain of the React app.
+# Security Config: I'm allowing all origins for now to make development easy
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Key = Filename, Value = The DataFrame
-data_store = {}
+# --- STORAGE CONFIGURATION ---
+# I am creating a dedicated folder to store user files safely on disk
+UPLOAD_DIR = "temp_files"
+os.makedirs(UPLOAD_DIR, exist_ok=True)
 
+# Initialize the Brain (Groq Llama 3)
+client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
+
+# I updated the request model to require a specific file_id (The Ticket)
 class CommandRequest(BaseModel):
-    filename: str
+    file_id: str
     query: str
-
-client = Groq(
-    api_key=os.environ.get("GROQ_API_KEY")
-)
 
 @app.get("/")
 def health_check():
-    # Simple endpoint to verify the server is running correctly
-    return {"status": "CleanSlate API is active", "version": "1.0.0"}
+    return {"status": "CleanSlate System Ready", "storage": "Local Disk"}
 
 @app.post("/upload")
 async def upload_file(file: UploadFile = File(...)):
-    # 1. VALIDATION: Check file extension
     if not file.filename.endswith(".csv"):
-        raise HTTPException(status_code=400, detail="Invalid file type. Please upload a CSV.")
+        raise HTTPException(status_code=400, detail="Only CSV files are supported.")
+
+    # 1. GENERATE UNIQUE ID
+    # I use a UUID so every user gets a unique workspace, preventing data collisions.
+    file_id = str(uuid.uuid4())
+    safe_filename = f"{file_id}.csv"
+    file_path = os.path.join(UPLOAD_DIR, safe_filename)
 
     try:
-        # 2. READING: Read the file content into memory
-        contents = await file.read()
+        # 2. STREAM TO DISK
+        # I stream the file content to avoid crashing RAM with large datasets.
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
         
-        # 3. PROCESSING: Convert binary bytes -> Pandas DataFrame
-        # io.BytesIO makes the raw bytes look like a filepath to Pandas
-        df = pd.read_csv(io.BytesIO(contents), skipinitialspace=True)
-
-        # We store the dataframe using the filename as the ID
-        data_store[file.filename] = df
+        # 3. GENERATE PREVIEW
+        # I read the file back immediately to prove it was saved correctly.
+        df = pd.read_csv(file_path, skipinitialspace=True)
         
-        # 4. PREVIEW: Get the first 5 rows and handle NaN (empty) values
-        # We replace NaN with None because JSON cannot handle NaN
+        # Helper to safely handle NaN values for JSON response
         preview = df.head().replace({float('nan'): None}).to_dict(orient='records')
         
         return {
+            "file_id": file_id, # The Frontend must keep this ticket!
             "filename": file.filename,
             "total_rows": df.shape[0],
             "total_columns": df.shape[1],
@@ -69,71 +75,60 @@ async def upload_file(file: UploadFile = File(...)):
         }
         
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error processing file: {str(e)}")
-    
+        raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
+
 @app.post("/process")
 def process_command(request: CommandRequest):
-    filename = request.filename
-    query = request.query
+    # I locate the specific user's file using their unique ID
+    file_path = os.path.join(UPLOAD_DIR, f"{request.file_id}.csv")
     
-    if filename not in data_store:
-        raise HTTPException(status_code=404, detail="File not found.")
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="Session expired or file not found.")
     
-    df = data_store[filename]
-    
-# 1. Prepare the Prompt
-    columns = list(df.columns)
-    # We show the AI a sample of the data so it sees "Designer" has a capital D
-    sample_data = df.head().to_string() 
-    
-    system_prompt = f"""
-    You are a Python Data Assistant. 
-    DataFrame Name: 'df'
-    Columns: {columns}
-    Sample Data:
-    {sample_data}
-    
-    User Request: "{query}"
-    
-    Task: Write Python code to update 'df'.
-    
-    CRITICAL RULES:
-    1. You MUST use assignment or inplace=True. Example: "df = df[...]"
-    2. When filtering strings, use `.str.contains(..., case=False)` if appropriate, or handle capitalization carefully based on the Sample Data.
-    3. Return ONLY the code string. No markdown.
-    """
-
     try:
-        # 2. Call AI
+        df = pd.read_csv(file_path)
+        
+        # --- AI LOGIC ---
+        columns = list(df.columns)
+        sample = df.head().to_string()
+        
+        system_prompt = f"""
+        You are a Python Data Assistant. 
+        DataFrame Name: 'df'
+        Columns: {columns}
+        Sample Data: {sample}
+        User Request: "{request.query}"
+        
+        Task: Write Python code to update 'df'.
+        RULES:
+        1. MUST assign output: "df = df[...]" or "df.dropna(inplace=True)"
+        2. Handle strings with `.str.contains(..., case=False)`
+        3. Return ONLY code.
+        """
+
         chat_completion = client.chat.completions.create(
             messages=[
-                {"role": "system", "content": "You are a coding assistant. Output only raw code."},
+                {"role": "system", "content": "Output only raw code."},
                 {"role": "user", "content": system_prompt}
             ],
             model="llama-3.3-70b-versatile",
         )
         
-        code_to_run = chat_completion.choices[0].message.content.strip()
-        code_to_run = code_to_run.replace("```python", "").replace("```", "").strip()
-        
-        print(f"🤖 AI Generated Code: {code_to_run}") # Check your terminal to see this!
+        code = chat_completion.choices[0].message.content.strip().replace("```python", "").replace("```", "")
+        print(f"Executing: {code}")
 
-        # 3. EXECUTE
         local_vars = {"df": df}
-        exec(code_to_run, {}, local_vars)
-        
-        # 4. CAPTURE THE CHANGE
-        # We verify if 'df' was actually updated in the local scope
+        exec(code, {}, local_vars)
         df_modified = local_vars["df"]
         
-        # Save to memory
-        data_store[filename] = df_modified
+        # 4. OVERWRITE DISK
+        # I save the modified data back to the same file ID so the changes persist.
+        df_modified.to_csv(file_path, index=False)
         
-        # 5. RETURN
         preview = df_modified.head().replace({float('nan'): None}).to_dict(orient='records')
         
         return {
-            "message": f"Executed: {code_to_run}",
+            "message": f"Executed: {code}",
             "total_rows": df_modified.shape[0],
             "preview": preview,
             "columns": list(df_modified.columns)
@@ -141,29 +136,18 @@ def process_command(request: CommandRequest):
 
     except Exception as e:
         print(f"Error: {e}")
-        raise HTTPException(status_code=500, detail="The AI failed to generate valid code.")
+        raise HTTPException(status_code=500, detail="AI processing failed.")
 
-@app.get("/download/{filename}")
-def download_file(filename: str):
-    # 1. Check if file exists in memory
-    if filename not in data_store:
+@app.get("/download/{file_id}")
+def download_file(file_id: str):
+    file_path = os.path.join(UPLOAD_DIR, f"{file_id}.csv")
+    
+    if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="File not found.")
     
-    df = data_store[filename]
-    
-    # 2. Convert DataFrame to CSV String
-    # index=False means "don't include the row numbers (0, 1, 2...)"
-    stream = io.StringIO()
-    df.to_csv(stream, index=False)
-    
-    # 3. Reset cursor to the start of the stream
-    response = io.BytesIO()
-    response.write(stream.getvalue().encode('utf-8'))
-    response.seek(0)
-    
-    # 4. Stream it back to the user
-    return StreamingResponse(
-        response, 
+    # I return the file directly from the disk
+    return FileResponse(
+        file_path, 
         media_type="text/csv", 
-        headers={"Content-Disposition": f"attachment; filename=clean_{filename}"}
+        filename=f"clean_data_{file_id[:8]}.csv"
     )
