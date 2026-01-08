@@ -3,7 +3,7 @@
 * Live Link: (https://clean-slate-cgt0yfd5p-ahmedmelgoharys-projects.vercel.app/)
 
 ## Overview
-CleanSlate is a full-stack tool I built to streamline data cleaning. It allows users to upload raw CSV files and manipulate them using plain English instructions, eliminating the need to write Python scripts for every new dataset.
+CleanSlate is an MVP (Minimum Viable Product) designed to demonstrate how LLMs can bridge the gap between non-technical users and Pandas manipulation. It is currently optimized for lightweight datasets (~5MB) and rapid iteration." It allows users to upload raw CSV files and manipulate them using plain English instructions, eliminating the need to write Python scripts for every new dataset.
 
 I designed the architecture to be secure and stateless. It uses a session-based system to ensure that multiple users can process data simultaneously without any risk of data overlapping. The application is fully deployed and hosted on Vercel.
 
