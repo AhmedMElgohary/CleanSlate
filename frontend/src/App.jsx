@@ -1,8 +1,9 @@
 import { useState } from 'react'
+import pako from 'pako' // I use pako to handle GZIP compression in the browser
 import './App.css'
 
 function App() {
-  // CONFIGURATION: This points to the backend (relative path for Vercel)
+  // Configuration: Points to the Vercel serverless functions
   const API_BASE_URL = "/api";
   
   const [fileId, setFileId] = useState(null)
@@ -19,6 +20,7 @@ function App() {
   const handleFileChange = (e) => {
     const selectedFile = e.target.files[0];
     setFile(selectedFile);
+    // Reset state when a new file is selected to avoid UI confusion
     setError("");
     setMessage("");
     setData(null);
@@ -35,25 +37,40 @@ function App() {
     setError("");
     setMessage("");
 
-    const formData = new FormData();
-    formData.append("file", file);
-
     try {
+      // Step 1: Read the file into memory
+      const fileBuffer = await file.arrayBuffer();
+
+      // Step 2: Client-Side Compression
+      // I compress the file before sending it to bypass Vercel's 4.5MB payload limit.
+      // This allows me to handle files ~10x larger without needing a paid storage bucket.
+      const compressed = pako.gzip(new Uint8Array(fileBuffer));
+
+      // Step 3: Prepare the upload
+      // I send this as a raw binary Blob with a custom header for the filename,
+      // which is more efficient here than standard Multipart FormData.
+      const blob = new Blob([compressed], { type: 'application/gzip' });
+      
       const response = await fetch(`${API_BASE_URL}/upload`, {
         method: "POST",
-        body: formData,
+        headers: {
+            "X-Filename": file.name, 
+            "Content-Type": "application/gzip"
+        },
+        body: blob,
       });
 
       const result = await response.json();
 
       if (response.ok) {
         setData(result);
-        setFileId(result.file_id);
+        setFileId(result.file_id); // Capture the session ID for subsequent AI operations
       } else {
         setError(result.detail || "Upload failed");
       }
     } catch (err) {
-      setError("Network error. Is the backend running?");
+      console.error(err);
+      setError("Network error. The file might still be too large for the serverless function.");
     }
     
     setUploading(false);
@@ -66,14 +83,11 @@ function App() {
     setError("");
 
     try {
-      // FIX: This now points to /process instead of /upload
+      // I send the query + file_id so the backend knows which dataframe to modify
       const response = await fetch(`${API_BASE_URL}/process`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-            file_id: fileId, 
-            query: query 
-        }),
+        body: JSON.stringify({ file_id: fileId, query: query }),
       });
 
       const result = await response.json();
@@ -82,6 +96,7 @@ function App() {
         if (result.error) {
            setError(result.error);
         } else {
+           // Update the UI with the new data preview
            setData(prev => ({
              ...prev, 
              preview: result.preview, 
@@ -103,7 +118,7 @@ function App() {
   const handleDownload = () => {
     if (!fileId) return;
     
-    // FIX: Now uses the API_BASE_URL variable
+    // Trigger a direct download from the backend stream
     const url = `${API_BASE_URL}/download/${fileId}`;
     const link = document.createElement('a');
     link.href = url;
@@ -117,16 +132,17 @@ function App() {
     <div className="container">
       <h1>CleanSlate 🧹</h1>
       
-      {/* Upload Box */}
+      {/* Upload Section */}
       <div className="upload-box">
         <input type="file" accept=".csv" onChange={handleFileChange} />
         <button onClick={handleUpload} disabled={uploading}>
-          {uploading ? "Scanning..." : "Upload CSV"}
+          {uploading ? "Compressing & Uploading..." : "Upload CSV"}
         </button>
       </div>
 
       {error && <p style={{ color: "#ef4444", fontWeight: "bold" }}>{error}</p>}
 
+      {/* Results & AI Interface */}
       {data && (
         <div className="results">
           <h3>File: {data.filename}</h3>
