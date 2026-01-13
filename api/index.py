@@ -127,14 +127,15 @@ def process_command(request: CommandRequest):
         # YOUR TASK:
         Write Python code to clean or transform 'df' in-place.
         
-        # CRITICAL RULES:
-        1. FOR DATES: You MUST use `format='mixed'` when converting.
-           - Code: `pd.to_datetime(df['col'], format='mixed', dayfirst=False)`
-           - This allows row-by-row inference. DO NOT use errors='coerce' unless the user asks to remove bad data.
-           - If a specific format is requested (e.g. DD/MM/YYYY), use `.dt.strftime('%d/%m/%Y')` AFTER converting.
-        2. FOR SORTING: Always convert to numeric first.
-        3. Return ONLY valid Python code.
-        4. Do NOT re-load the file. Work with 'df'.
+# GOLDEN RULES FOR DATES:
+        1. ALWAYS use `pd.to_datetime` with `errors='coerce'`. 
+           - Code: `df['col'] = pd.to_datetime(df['col'], errors='coerce')`
+           - Why: This allows Pandas to automatically detect different formats in different rows (e.g. Text vs Slashes) without crashing.
+        2. If the user wants a specific format (like DD/MM/YYYY), use `.dt.strftime()` *after* converting.
+           - Code: `df['col'] = df['col'].dt.strftime('%d/%m/%Y')`
+        3. FOR SORTING: Always convert to numeric first.
+        4. Return ONLY valid Python code.
+        5. Do NOT re-load the file. Work with 'df'.
         """
 
         chat_completion = client.chat.completions.create(
