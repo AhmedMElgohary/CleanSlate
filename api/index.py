@@ -128,10 +128,12 @@ def process_command(request: CommandRequest):
         Write Python code to clean or transform 'df' in-place.
         
         # CRITICAL RULES:
-        1. Assume data is MESSY. Use `errors='coerce'` or `format='mixed'` for dates.
-        2. Handle strings robustly (e.g., `.str.replace` with regex if needed).
-        3. Return ONLY valid Python code. No markdown, no explanations.
-        4. Do NOT re-load the file (pd.read_csv). Work with 'df'.
+        1. FOR DATES: You MUST use `format='mixed'` when converting.
+           - Code: `pd.to_datetime(df['col'], format='mixed', dayfirst=False)`
+           - This allows row-by-row inference. DO NOT use errors='coerce' unless the user asks to remove bad data.
+        2. FOR SORTING: Always convert to numeric first.
+        3. Return ONLY valid Python code.
+        4. Do NOT re-load the file. Work with 'df'.
         """
 
         chat_completion = client.chat.completions.create(
