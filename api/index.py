@@ -112,14 +112,14 @@ def process_command(request: CommandRequest):
         df_info = buffer.getvalue()
         
         # 3. Construct the "Smart" Prompt
-        system_prompt = f"""
+system_prompt = f"""
         You are a Python Data Expert. 
         DataFrame Name: 'df'
         
         # DATA PROFILE:
         {df_info}
         
-        # DATA SAMPLE (Random 20 rows - expect variety/messiness):
+        # DATA SAMPLE:
         {df_sample}
         
         # USER REQUEST: "{query}"
@@ -127,15 +127,22 @@ def process_command(request: CommandRequest):
         # YOUR TASK:
         Write Python code to clean or transform 'df' in-place.
         
-# GOLDEN RULES FOR DATES:
-        1. ALWAYS use `pd.to_datetime` with `errors='coerce'`. 
-           - Code: `df['col'] = pd.to_datetime(df['col'], errors='coerce')`
-           - Why: This allows Pandas to automatically detect different formats in different rows (e.g. Text vs Slashes) without crashing.
-        2. If the user wants a specific format (like DD/MM/YYYY), use `.dt.strftime()` *after* converting.
-           - Code: `df['col'] = df['col'].dt.strftime('%d/%m/%Y')`
-        3. FOR SORTING: Always convert to numeric first.
-        4. Return ONLY valid Python code.
-        5. Do NOT re-load the file. Work with 'df'.
+        # UNIVERSAL PATTERN FOR DATES (ALWAYS USE THIS):
+        If the user asks to convert or format dates (to ANY format):
+        1. First, convert safely: `df['col'] = pd.to_datetime(df['col'], errors='coerce')`
+           (Do NOT use specific formats inside to_datetime, let Pandas infer it).
+        2. Then, apply the requested format: `df['col'] = df['col'].dt.strftime('...user_requested_format...')`
+        
+        # EXAMPLE:
+        User: "Convert Date to MM-DD-YY"
+        You:
+        df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
+        df['Date'] = df['Date'].dt.strftime('%m-%d-%y')
+
+        # RULES:
+        1. Return ONLY valid Python code. No markdown.
+        2. Do NOT re-load the file.
+        3. Prioritize the Universal Pattern for dates.
         """
 
         chat_completion = client.chat.completions.create(
