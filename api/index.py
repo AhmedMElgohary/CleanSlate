@@ -127,10 +127,11 @@ def process_command(request: CommandRequest):
         # YOUR TASK:
         Write Python code to clean or transform 'df' in-place.
         
-        # CRITICAL RULES:
-        1. FOR DATES: You MUST use `format='mixed'` when converting.
-           - Code: `pd.to_datetime(df['col'], format='mixed', dayfirst=False)`
-           - This allows row-by-row inference. DO NOT use errors='coerce' unless the user asks to remove bad data.
+# CRITICAL RULES (Strict):
+        1. FOR DATES: 
+           - Use simple `pd.to_datetime(df['col'], errors='coerce')` as the default. 
+           - Do NOT use `format='mixed'` unless the user specifically asks for it.
+           - If a specific format is requested (e.g. DD/MM/YYYY), use `.dt.strftime('%d/%m/%Y')` AFTER converting.
         2. FOR SORTING: Always convert to numeric first.
         3. Return ONLY valid Python code.
         4. Do NOT re-load the file. Work with 'df'.
