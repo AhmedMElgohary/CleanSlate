@@ -127,22 +127,30 @@ def process_command(request: CommandRequest):
         # YOUR TASK:
         Write Python code to clean or transform 'df' in-place.
         
-        # UNIVERSAL PATTERN FOR DATES (ALWAYS USE THIS):
-        If the user asks to convert or format dates (to ANY format):
-        1. First, convert safely: `df['col'] = pd.to_datetime(df['col'], errors='coerce')`
-           (Do NOT use specific formats inside to_datetime, let Pandas infer it).
-        2. Then, apply the requested format: `df['col'] = df['col'].dt.strftime('...user_requested_format...')`
+        # CRITICAL LOGIC FOR DATES (MANDATORY):
+        If the user asks to convert/format a date column, you MUST use this 2-step process:
         
-        # EXAMPLE:
-        User: "Convert Date to MM-DD-YY"
+        STEP 1: INFER & CONVERT (Always use this exact line first)
+        df['col_name'] = pd.to_datetime(df['col_name'], errors='coerce')
+        # (Do NOT add format='...' inside to_datetime. Let Pandas detect the input format automatically.)
+        
+        STEP 2: FORMAT OUTPUT (Only if user requested a specific format)
+        df['col_name'] = df['col_name'].dt.strftime('...user_requested_format...')
+        
+        # EXAMPLES:
+        User: "Convert Join_Date to DD/MM/YYYY"
+        You:
+        df['Join_Date'] = pd.to_datetime(df['Join_Date'], errors='coerce')
+        df['Join_Date'] = df['Join_Date'].dt.strftime('%d/%m/%Y')
+
+        User: "Change Date to Month-Year format"
         You:
         df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
-        df['Date'] = df['Date'].dt.strftime('%m-%d-%y')
+        df['Date'] = df['Date'].dt.strftime('%B-%Y')
 
         # RULES:
         1. Return ONLY valid Python code. No markdown.
         2. Do NOT re-load the file.
-        3. Prioritize the Universal Pattern for dates.
         """
 
         chat_completion = client.chat.completions.create(
