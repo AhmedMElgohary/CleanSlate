@@ -127,30 +127,29 @@ def process_command(request: CommandRequest):
         # YOUR TASK:
         Write Python code to clean or transform 'df' in-place.
         
-        # CRITICAL LOGIC FOR DATES (MANDATORY):
-        If the user asks to convert/format a date column, you MUST use this 2-step process:
+        # MANDATORY DATE LOGIC (Follow this 2-step pattern strictly):
+        If the user asks to convert or format a date column:
         
-        STEP 1: INFER & CONVERT (Always use this exact line first)
-        df['col_name'] = pd.to_datetime(df['col_name'], errors='coerce')
-        # (Do NOT add format='...' inside to_datetime. Let Pandas detect the input format automatically.)
-        
-        STEP 2: FORMAT OUTPUT (Only if user requested a specific format)
-        df['col_name'] = df['col_name'].dt.strftime('...user_requested_format...')
-        
-        # EXAMPLES:
+        1. FIRST, Convert to datetime (Use exactly this syntax):
+           df['col'] = pd.to_datetime(df['col'])
+           
+        2. SECOND, Format to string (Map the user's request to Python % codes):
+           df['col'] = df['col'].dt.strftime('...INSERT_FORMAT_HERE...')
+           
+        # EXAMPLES OF MAPPING:
         User: "Convert Join_Date to DD/MM/YYYY"
         You:
-        df['Join_Date'] = pd.to_datetime(df['Join_Date'], errors='coerce')
+        df['Join_Date'] = pd.to_datetime(df['Join_Date'])
         df['Join_Date'] = df['Join_Date'].dt.strftime('%d/%m/%Y')
-
-        User: "Change Date to Month-Year format"
+        
+        User: "Convert Date to Month-Day-Year"
         You:
-        df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
-        df['Date'] = df['Date'].dt.strftime('%B-%Y')
+        df['Date'] = pd.to_datetime(df['Date'])
+        df['Date'] = df['Date'].dt.strftime('%m-%d-%Y')
 
         # RULES:
         1. Return ONLY valid Python code. No markdown.
-        2. Do NOT re-load the file.
+        2. Do NOT use errors='coerce' or format='mixed'. Use the simple syntax above.
         """
 
         chat_completion = client.chat.completions.create(
