@@ -112,7 +112,7 @@ def process_command(request: CommandRequest):
         df_info = buffer.getvalue()
         
         # 3. Construct the "Smart" Prompt
-system_prompt = f"""
+        system_prompt = f"""
         You are a Python Data Expert. 
         DataFrame Name: 'df'
         
