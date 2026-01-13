@@ -100,22 +100,38 @@ def process_command(request: CommandRequest):
     df = data_store[file_id]
     
     try:
-        columns = list(df.columns)
-        sample = df.head().to_string()
+        # SMART CONTEXT STRATEGY 🧠
+        # 1. Get a random sample (up to 20 rows) to show variety/messiness
+        # We use min() to handle small files (<20 rows) without crashing
+        sample_size = min(20, len(df))
+        df_sample = df.sample(n=sample_size).to_string()
         
-        # Prompt Engineering: I restrict the AI to only output executable code.
+        # 2. Get Column Info (Types)
+        buffer = io.StringIO()
+        df.info(buf=buffer)
+        df_info = buffer.getvalue()
+        
+        # 3. Construct the "Smart" Prompt
         system_prompt = f"""
-        You are a Python Data Assistant. 
+        You are a Python Data Expert. 
         DataFrame Name: 'df'
-        Columns: {columns}
-        Sample Data: {sample}
-        User Request: "{query}"
         
-        Task: Write Python code to update 'df'.
-        RULES:
-        1. MUST assign output: "df = df[...]" or "df.dropna(inplace=True)"
-        2. Handle strings with `.str.contains(..., case=False)`
-        3. Return ONLY code.
+        # DATA PROFILE:
+        {df_info}
+        
+        # DATA SAMPLE (Random 20 rows - expect variety/messiness):
+        {df_sample}
+        
+        # USER REQUEST: "{query}"
+        
+        # YOUR TASK:
+        Write Python code to clean or transform 'df' in-place.
+        
+        # CRITICAL RULES:
+        1. Assume data is MESSY. Use `errors='coerce'` or `format='mixed'` for dates.
+        2. Handle strings robustly (e.g., `.str.replace` with regex if needed).
+        3. Return ONLY valid Python code. No markdown, no explanations.
+        4. Do NOT re-load the file (pd.read_csv). Work with 'df'.
         """
 
         chat_completion = client.chat.completions.create(
