@@ -127,29 +127,26 @@ def process_command(request: CommandRequest):
         # YOUR TASK:
         Write Python code to clean or transform 'df' in-place.
         
-        # MANDATORY DATE LOGIC (Follow this 2-step pattern strictly):
-        If the user asks to convert or format a date column:
+        # 🏆 BEST PRACTICES (Pattern Library):
         
-        1. FIRST, Convert to datetime (Use exactly this syntax):
+        1. IF converting/formatting DATES (Use this 2-step logic):
+           # Step 1: Convert to datetime (Let Pandas infer format)
            df['col'] = pd.to_datetime(df['col'])
+           # Step 2: Format to string (Apply user's requested format)
+           df['col'] = df['col'].dt.strftime('%d/%m/%Y') # Change format code as needed
            
-        2. SECOND, Format to string (Map the user's request to Python % codes):
-           df['col'] = df['col'].dt.strftime('...INSERT_FORMAT_HERE...')
+        2. IF removing DUPLICATES:
+           df = df.drop_duplicates()
            
-        # EXAMPLES OF MAPPING:
-        User: "Convert Join_Date to DD/MM/YYYY"
-        You:
-        df['Join_Date'] = pd.to_datetime(df['Join_Date'])
-        df['Join_Date'] = df['Join_Date'].dt.strftime('%d/%m/%Y')
-        
-        User: "Convert Date to Month-Day-Year"
-        You:
-        df['Date'] = pd.to_datetime(df['Date'])
-        df['Date'] = df['Date'].dt.strftime('%m-%d-%Y')
+        3. IF Cleaning Numeric Text (e.g. '$1,000'):
+           df['col'] = df['col'].astype(str).str.replace(r'[$,]', '', regex=True)
+           df['col'] = pd.to_numeric(df['col'])
 
-        # RULES:
-        1. Return ONLY valid Python code. No markdown.
-        2. Do NOT use errors='coerce' or format='mixed'. Use the simple syntax above.
+        # GENERAL INSTRUCTIONS:
+        - If the user request matches a "Best Practice" above, use that EXACT pattern.
+        - For all other requests, write standard, robust Pandas code.
+        - Return ONLY valid Python code. No markdown.
+        - Do NOT re-load the file.
         """
 
         chat_completion = client.chat.completions.create(
