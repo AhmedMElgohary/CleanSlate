@@ -127,26 +127,10 @@ def process_command(request: CommandRequest):
         # YOUR TASK:
         Write Python code to clean or transform 'df' in-place.
         
-        # 🏆 BEST PRACTICES (Pattern Library):
-        
-        1. IF converting/formatting DATES (Use this 2-step logic):
-           # Step 1: Convert to datetime (Let Pandas infer format)
-           df['col'] = pd.to_datetime(df['col'])
-           # Step 2: Format to string (Apply user's requested format)
-           df['col'] = df['col'].dt.strftime('%d/%m/%Y') # Change format code as needed
-           
-        2. IF removing DUPLICATES:
-           df = df.drop_duplicates()
-           
-        3. IF Cleaning Numeric Text (e.g. '$1,000'):
-           df['col'] = df['col'].astype(str).str.replace(r'[$,]', '', regex=True)
-           df['col'] = pd.to_numeric(df['col'])
-
-        # GENERAL INSTRUCTIONS:
-        - If the user request matches a "Best Practice" above, use that EXACT pattern.
-        - For all other requests, write standard, robust Pandas code.
-        - Return ONLY valid Python code. No markdown.
-        - Do NOT re-load the file.
+        # RULES:
+        1. Return ONLY valid Python code. No markdown, no comments, no explanations.
+        2. Do NOT re-load the file. Work with the existing 'df'.
+        3. Use standard, robust Pandas methods (e.g. pd.to_datetime, drop_duplicates).
         """
 
         chat_completion = client.chat.completions.create(
@@ -161,7 +145,7 @@ def process_command(request: CommandRequest):
         print(f"Executing: {code}")
 
         # Safe execution environment
-        local_vars = {"df": df}
+        local_vars = {"df": df, "pd": pd}
         exec(code, {}, local_vars)
         df_modified = local_vars["df"]
         
@@ -171,6 +155,7 @@ def process_command(request: CommandRequest):
         
         return {
             "message": f"Executed: {code}",
+            "generated_code": code,
             "total_rows": df_modified.shape[0],
             "preview": preview,
             "columns": list(df_modified.columns)
@@ -178,7 +163,12 @@ def process_command(request: CommandRequest):
 
     except Exception as e:
         print(f"AI Error: {e}")
-        raise HTTPException(status_code=500, detail="AI processing failed.")
+        raise HTTPException(status_code=500, 
+            detail={
+                "error": str(e),
+                "failed_code": code if 'code' in locals() else "No code generated"
+            }
+        )
 
 @app.get("/api/download/{file_id}")
 def download_file(file_id: str):
