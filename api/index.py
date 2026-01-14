@@ -14,7 +14,7 @@ load_dotenv()
 
 app = FastAPI()
 
-# Allow cross-origin requests (essential for the frontend to talk to the backend)
+# Allow cross-origin requests
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -24,8 +24,6 @@ app.add_middleware(
 )
 
 # In-Memory Storage
-# I'm using a dictionary to store dataframes by session ID.
-# This keeps the app stateless and fast, though data resets on server restart.
 data_store = {} 
 
 client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
@@ -36,38 +34,25 @@ class CommandRequest(BaseModel):
 
 @app.get("/api")
 def health_check():
-    """Simple check to ensure the serverless function is warm."""
     return {"status": "CleanSlate Cloud API is running"}
 
 @app.post("/api/upload")
 async def upload_file(request: Request):
-    """
-    Handles file uploads. 
-    Includes logic to decompress GZIP files sent by the frontend,
-    allowing us to bypass standard payload limits.
-    """
     try:
-        # Extract filename from the custom header
         filename = request.headers.get("X-Filename", "uploaded_file.csv")
-        
-        # Read the raw binary body
         body = await request.body()
         
         # Decompression Logic
-        # Try to decompress assuming GZIP. If it fails, assume it's a raw file.
         try:
             content = gzip.decompress(body)
         except:
             content = body
             
-        # Load the binary data into Pandas
         df = pd.read_csv(io.BytesIO(content), skipinitialspace=True)
         
-        # Assign a unique session ID
         file_id = str(uuid.uuid4())
         data_store[file_id] = df
         
-        # Generate a lightweight preview for the UI
         preview = df.head().replace({float('nan'): None}).to_dict(orient='records')
         
         return {
@@ -85,12 +70,6 @@ async def upload_file(request: Request):
 
 @app.post("/api/process")
 def process_command(request: CommandRequest):
-    """
-    The core AI engine.
-    1. Retrieves the dataframe from memory using the file_id.
-    2. Sends the user's natural language query + schema to Llama 3.
-    3. Executes the returned Python code safely.
-    """
     file_id = request.file_id
     query = request.query
     
@@ -99,19 +78,19 @@ def process_command(request: CommandRequest):
     
     df = data_store[file_id]
     
+    # Initialize 'code' so it exists even if the AI fails early
+    code = "No code generated"
+
     try:
-        # SMART CONTEXT STRATEGY 🧠
-        # 1. Get a random sample (up to 20 rows) to show variety/messiness
-        # We use min() to handle small files (<20 rows) without crashing
+        # 1. Context (Smart Sample)
         sample_size = min(20, len(df))
         df_sample = df.sample(n=sample_size).to_string()
         
-        # 2. Get Column Info (Types)
         buffer = io.StringIO()
         df.info(buf=buffer)
         df_info = buffer.getvalue()
         
-        # 3. Construct the "Smart" Prompt
+        # 2. STRICT SYSTEM PROMPT (The Fix for Reliability) 🛡️
         system_prompt = f"""
         You are a Python Data Expert. 
         DataFrame Name: 'df'
@@ -127,29 +106,41 @@ def process_command(request: CommandRequest):
         # YOUR TASK:
         Write Python code to clean or transform 'df' in-place.
         
-        # RULES:
-        1. Return ONLY valid Python code. No markdown, no comments, no explanations.
-        2. Do NOT re-load the file. Work with the existing 'df'.
-        3. Use standard, robust Pandas methods (e.g. pd.to_datetime, drop_duplicates).
+        # ⚠️ CRITICAL RULES:
+        1. IF DATES (Convert/Format):
+           # Always use this exact 2-step process:
+           df['col'] = pd.to_datetime(df['col'], errors='coerce') 
+           df['col'] = df['col'].dt.strftime('%d/%m/%Y') # Change format code as requested
+           
+        2. IF DUPLICATES:
+           df = df.drop_duplicates()
+           
+        3. GENERAL:
+           - Return ONLY valid Python code. No markdown.
+           - Do NOT re-load the file.
         """
 
+        # 3. Call Groq with Temperature=0 (The Fix for "10 Clicks") ❄️
         chat_completion = client.chat.completions.create(
             messages=[
                 {"role": "system", "content": "Output only raw code."},
                 {"role": "user", "content": system_prompt}
             ],
             model="llama-3.3-70b-versatile",
+            temperature=0, # Zero Creativity = 100% Stability
         )
         
-        code = chat_completion.choices[0].message.content.strip().replace("```python", "").replace("```", "")
+        code = chat_completion.choices[0].message.content.strip()
+        code = code.replace("```python", "").replace("```", "").strip()
+        
+        # Print code to terminal so you can verify it
         print(f"Executing: {code}")
 
-        # Safe execution environment
-        local_vars = {"df": df, "pd": pd}
+        # 4. Execute with 'pd' passed in
+        local_vars = {"df": df, "pd": pd} 
         exec(code, {}, local_vars)
         df_modified = local_vars["df"]
         
-        # Update the session state
         data_store[file_id] = df_modified
         preview = df_modified.head().replace({float('nan'): None}).to_dict(orient='records')
         
@@ -163,18 +154,17 @@ def process_command(request: CommandRequest):
 
     except Exception as e:
         print(f"AI Error: {e}")
-        raise HTTPException(status_code=500, 
+        # This sends the actual error + bad code to the frontend
+        raise HTTPException(
+            status_code=500, 
             detail={
                 "error": str(e),
-                "failed_code": code if 'code' in locals() else "No code generated"
+                "failed_code": code
             }
         )
 
 @app.get("/api/download/{file_id}")
 def download_file(file_id: str):
-    """
-    Converts the in-memory dataframe back to CSV and streams it to the client.
-    """
     if file_id not in data_store:
         raise HTTPException(status_code=404, detail="File not found.")
     
