@@ -3,12 +3,13 @@ import uuid
 import io
 import gzip
 from fastapi import FastAPI, Request, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import pandas as pd
 from groq import Groq
 from dotenv import load_dotenv
+import traceback
 
 load_dotenv()
 
@@ -153,13 +154,17 @@ def process_command(request: CommandRequest):
         }
 
     except Exception as e:
-        print(f"AI Error: {e}")
-        # This sends the actual error + bad code to the frontend
-        raise HTTPException(
+        error_msg = str(e)
+        full_trace = traceback.format_exc()
+        print(f"❌ Error: {error_msg}")
+        
+        # RETURN ERROR AS JSON SO FRONTEND SEES IT
+        return JSONResponse(
             status_code=500, 
-            detail={
-                "error": str(e),
-                "failed_code": code
+            content={
+                "error": error_msg,
+                "failed_code": code,
+                "trace": full_trace
             }
         )
 
