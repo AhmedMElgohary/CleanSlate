@@ -14,13 +14,16 @@ export default function LivingWorkbench() {
   const [error, setError] = useState(null); 
   const [rowsCount, setRowsCount] = useState(0);
   const [isDragging, setIsDragging] = useState(false); // Visual cue for dragging
+  
+  // 🆕 NEW STATE FOR CODE TERMINAL
+  const [lastCode, setLastCode] = useState(null); 
 
   // Configuration
   const API_BASE_URL = import.meta.env.PROD 
   ? "/api" 
   : "http://127.0.0.1:8000/api";
 
-  // 🔄 CORE UPLOAD LOGIC (Reused by both Click and Drop)
+  // 🔄 CORE UPLOAD LOGIC
   const processFile = async (file) => {
     if (!file) return;
 
@@ -28,16 +31,10 @@ export default function LivingWorkbench() {
     setError(null);
 
     try {
-      // 1. Read file
       const fileBuffer = await file.arrayBuffer();
-
-      // 2. Compress (Your Pako Logic)
       const compressed = pako.gzip(new Uint8Array(fileBuffer));
-
-      // 3. Create Blob
       const blob = new Blob([compressed], { type: 'application/gzip' });
 
-      // 4. Upload
       const response = await fetch(`${API_BASE_URL}/upload`, {
         method: 'POST',
         headers: {
@@ -68,15 +65,13 @@ export default function LivingWorkbench() {
     }
   };
 
-  // 🖱️ CLICK HANDLER
   const handleFileChange = (e) => {
     const file = e.target.files?.[0];
     if (file) processFile(file);
   };
 
-  // 🖐️ DRAG & DROP HANDLERS
   const handleDragOver = (e) => {
-    e.preventDefault(); // STOP the browser from opening the file
+    e.preventDefault();
     setIsDragging(true);
   };
 
@@ -85,9 +80,8 @@ export default function LivingWorkbench() {
   };
 
   const handleDrop = (e) => {
-    e.preventDefault(); // STOP the browser from opening the file
+    e.preventDefault();
     setIsDragging(false);
-    
     const file = e.dataTransfer.files?.[0];
     if (file) processFile(file);
   };
@@ -97,6 +91,7 @@ export default function LivingWorkbench() {
     if (!query.trim()) return;
     setLoading(true);
     setError(null);
+    setLastCode(null); // Reset code view on new request
 
     try {
       const response = await fetch(`${API_BASE_URL}/process`, {
@@ -118,6 +113,12 @@ export default function LivingWorkbench() {
       setData(result.preview);
       setRowsCount(result.total_rows);
       setColumns(result.columns);
+      
+      // 🆕 CATCH THE GENERATED CODE
+      if (result.generated_code) {
+        setLastCode(result.generated_code);
+      }
+      
       setQuery(''); 
     } catch (err) {
       console.error("Command Error:", err);
@@ -130,7 +131,6 @@ export default function LivingWorkbench() {
     }
   };
 
-  // 📥 DOWNLOAD HANDLER
   const handleDownload = () => {
     if (!fileId) return;
     window.location.href = `${API_BASE_URL}/download/${fileId}`;
@@ -233,6 +233,43 @@ export default function LivingWorkbench() {
 
           {/* MAIN WORKSPACE */}
           <main className="flex-1 p-6 max-w-7xl mx-auto w-full pb-32">
+            
+            {/* 🆕 CODE TERMINAL (Only shows when code is present) */}
+            {lastCode && (
+              <div className="mb-8 animate-in slide-in-from-top-4 duration-500 fade-in">
+                <div className="bg-slate-900 rounded-xl overflow-hidden shadow-2xl border border-slate-700">
+                  <div className="flex items-center justify-between px-4 py-2 bg-slate-800 border-b border-slate-700">
+                    <div className="flex items-center gap-2">
+                      <div className="flex gap-1.5">
+                        <div className="w-3 h-3 rounded-full bg-red-500" />
+                        <div className="w-3 h-3 rounded-full bg-yellow-500" />
+                        <div className="w-3 h-3 rounded-full bg-green-500" />
+                      </div>
+                      <span className="ml-3 text-xs font-mono text-slate-400">generated_logic.py</span>
+                    </div>
+                    <button 
+                      onClick={() => setLastCode(null)} 
+                      className="text-slate-500 hover:text-white transition-colors"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                  <div className="p-4 overflow-x-auto bg-slate-950">
+                    <pre className="font-mono text-sm leading-relaxed text-green-400">
+                      <code>{lastCode}</code>
+                    </pre>
+                  </div>
+                  <div className="bg-slate-900 px-4 py-2 border-t border-slate-800">
+                    <p className="text-xs text-slate-500 flex items-center gap-2">
+                      <Wand2 size={12} />
+                      CleanSlate generated this Python code to process your request.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* DATA TABLE */}
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-sm">
