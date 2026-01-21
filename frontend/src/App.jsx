@@ -16,7 +16,9 @@ export default function LivingWorkbench() {
   const [isDragging, setIsDragging] = useState(false); // Visual cue for dragging
 
   // Configuration
-  const API_BASE_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000/api";
+  const API_BASE_URL = import.meta.env.PROD 
+  ? "/api" 
+  : "http://127.0.0.1:8000/api";
 
   // 🔄 CORE UPLOAD LOGIC (Reused by both Click and Drop)
   const processFile = async (file) => {
