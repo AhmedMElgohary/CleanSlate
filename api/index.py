@@ -126,10 +126,14 @@ def process_command(request: CommandRequest):
            df['col'] = pd.to_datetime(df['col'], errors='coerce') 
            df['col'] = df['col'].dt.strftime('%d/%m/%Y') # Change format code as requested
            
-        2. IF DUPLICATES:
-           df = df.drop_duplicates(inplace=True)
+        2. 🎯 FOCUS: Execute ONLY the user's specific request. Do NOT spontaneously clean other columns (dates, currency) unless explicitly asked.
+        3. 🛡️ SAFETY: When doing string operations (split, replace), ALWAYS handle missing values (NaN). 
+           - BEST PRACTICE: Use the .str accessor (e.g., df['col'].str.split(...)) which handles NaNs automatically.
+        4. 🐍 ALIASES: You have access to 'pd' (pandas) and 'np' (numpy).IF DUPLICATES:
            
-        3. GENERAL:
+        5. duplicates: df = df.drop_duplicates(inplace=True)
+           
+        5. GENERAL:
            - Return ONLY valid Python code. No markdown.
            - Do NOT re-load the file.
         """
