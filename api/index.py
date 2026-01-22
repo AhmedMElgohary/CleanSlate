@@ -7,6 +7,7 @@ from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import pandas as pd
+import numpy as np
 from groq import Groq
 from dotenv import load_dotenv
 import traceback
@@ -83,13 +84,19 @@ def process_command(request: CommandRequest):
     code = "No code generated"
 
     try:
-        # 1. Context (Smart Sample)
-        sample_size = min(20, len(df))
-        df_sample = df.sample(n=sample_size).to_string()
-        
+        # Instead of random rows, we show the Structure + The Junk + The Stats
         buffer = io.StringIO()
         df.info(buf=buffer)
         df_info = buffer.getvalue()
+        
+        head_rows = df.head(5).to_string()
+        tail_rows = df.tail(5).to_string()
+        
+        # Safe sampling for description (don't crash on small files)
+        try:
+            description = df.describe().to_string()
+        except:
+            description = "No numeric data"
         
         # 2. STRICT SYSTEM PROMPT (The Fix for Reliability) 🛡️
         system_prompt = f"""
@@ -99,8 +106,14 @@ def process_command(request: CommandRequest):
         # DATA PROFILE:
         {df_info}
         
-        # DATA SAMPLE:
-        {df_sample}
+        # STATISTICAL SUMMARY:
+        {description}
+
+        # DATA PREVIEW (Head):
+        {head_rows}
+
+        # DATA PREVIEW (Tail - Check for footer junk):
+        {tail_rows}
         
         # USER REQUEST: "{query}"
         
@@ -114,7 +127,7 @@ def process_command(request: CommandRequest):
            df['col'] = df['col'].dt.strftime('%d/%m/%Y') # Change format code as requested
            
         2. IF DUPLICATES:
-           df = df.drop_duplicates()
+           df = df.drop_duplicates(inplace=True)
            
         3. GENERAL:
            - Return ONLY valid Python code. No markdown.
@@ -138,7 +151,13 @@ def process_command(request: CommandRequest):
         print(f"Executing: {code}")
 
         # 4. Execute with 'pd' passed in
-        local_vars = {"df": df, "pd": pd} 
+        local_vars = {
+            "df": df, 
+            "pd": pd, 
+            "pandas": pd, 
+            "np": np, 
+            "numpy": np
+        } 
         exec(code, {}, local_vars)
         df_modified = local_vars["df"]
         
