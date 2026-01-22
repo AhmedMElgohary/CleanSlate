@@ -254,11 +254,11 @@ export default function LivingWorkbench() {
               {data.length > visibleRows && (
                 <div className="p-4 border-t border-slate-100 bg-slate-50 flex justify-center">
                   <button 
-                    onClick={() => setVisibleRows(prev => prev + 10)}
+                    onClick={() => setVisibleRows(prev => prev + 20)}
                     className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 shadow-sm rounded-full text-sm font-medium text-slate-600 hover:bg-slate-50 hover:text-indigo-600 transition-all"
                   >
                     <ChevronDown size={16} />
-                    Show {Math.min(10, data.length - visibleRows)} More Rows
+                    Show {Math.min(20, data.length - visibleRows)} More Rows
                   </button>
                 </div>
               )}

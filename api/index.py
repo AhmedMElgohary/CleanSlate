@@ -55,7 +55,7 @@ async def upload_file(request: Request):
         file_id = str(uuid.uuid4())
         data_store[file_id] = df
         
-        preview = df.head().replace({float('nan'): None}).to_dict(orient='records')
+        preview = df.head(100).replace({float('nan'): None}).to_dict(orient='records')
         
         return {
             "file_id": file_id,
@@ -166,7 +166,7 @@ def process_command(request: CommandRequest):
         df_modified = local_vars["df"]
         
         data_store[file_id] = df_modified
-        preview = df_modified.head().replace({float('nan'): None}).to_dict(orient='records')
+        preview = df_modified.head(100).replace({float('nan'): None}).to_dict(orient='records')
         
         return {
             "message": f"Executed: {code}",
