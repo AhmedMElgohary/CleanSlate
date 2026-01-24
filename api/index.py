@@ -94,12 +94,12 @@ async def upload_file(request: Request):
         if df is None:
              raise Exception(f"Could not read file. Attempts: {'; '.join(error_log)}")
 
-        # 5. Success! Save & Return
+        # INITIALIZE HISTORY STACK 🥞
         file_id = str(uuid.uuid4())
         data_store[file_id] = {
-            "original": df.copy(), # SAFE BACKUP
-            "current": df,         # WORKING COPY
-            "filename": filename   # REMEMBER FILE TYPE
+            "original": df.copy(),
+            "history": [df.copy()], # Start with initial state
+            "filename": filename
         }
         
         # Send 100 rows for scrolling
@@ -120,6 +120,30 @@ async def upload_file(request: Request):
              raise HTTPException(status_code=500, detail="Server missing Excel support. Please add 'openpyxl' to requirements.txt")
         raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
 
+@app.post("/api/undo")
+def undo_last_action(request: CommandRequest):
+    file_id = request.file_id
+    if file_id not in data_store:
+        raise HTTPException(status_code=404, detail="Session expired.")
+    
+    history = data_store[file_id]["history"]
+    
+    # If we have more than 1 state (Original + Changes), pop the last one
+    if len(history) > 1:
+        history.pop() # Remove the latest action
+        
+    current_df = history[-1] # Go back to previous
+    
+    # Handle NaN/Inf for JSON safety
+    preview = current_df.head(100).replace({np.nan: None, np.inf: None, -np.inf: None}).to_dict(orient='records')
+    
+    return {
+        "message": "↩️ Undo successful",
+        "total_rows": current_df.shape[0],
+        "preview": preview,
+        "columns": list(current_df.columns)
+    }
+
 @app.post("/api/process")
 def process_command(request: CommandRequest):
     file_id = request.file_id
@@ -131,29 +155,22 @@ def process_command(request: CommandRequest):
     # RESET LOGIC
     try:
         if query in ["reset", "restart", "restore", "reset data", "restore original", "start over"]:
-            stored_data = data_store[file_id]
-            
-            if isinstance(stored_data, dict):
-                data_store[file_id]["current"] = data_store[file_id]["original"].copy()
-                df_reset = data_store[file_id]["current"]
-            else:
-                df_reset = stored_data 
-            
-            preview = df_reset.head(100).replace({np.nan: None, np.inf: None, -np.inf: None}).to_dict(orient='records')
-            
+            # Reset history to just the original
+            original = data_store[file_id]["original"].copy()
+            data_store[file_id]["history"] = [original]
+        
+            preview = original.head(100).replace({np.nan: None, np.inf: None, -np.inf: None}).to_dict(orient='records')
             return {
-                "message": "🔄 Success! Data has been reset.",
-                "generated_code": "# Reset executed",
-                "total_rows": df_reset.shape[0],
-                "preview": preview,
-                "columns": list(df_reset.columns)
+            "message": "🔄 Data reset to original.",
+            "generated_code": "# Reset executed",
+            "total_rows": original.shape[0],
+            "preview": preview,
+            "columns": list(original.columns)
             }
 
-        stored_data = data_store[file_id]
-        if isinstance(stored_data, dict):
-            df = stored_data["current"]
-        else:
-            df = stored_data
+        # Get current state
+        history = data_store[file_id]["history"]
+        df = history[-1] # Always work on the latest version
 
         buffer = io.StringIO()
         df.info(buf=buffer)
@@ -247,18 +264,22 @@ def process_command(request: CommandRequest):
         
         # Did the AI create a 'result' variable?
         if "result" in local_vars and isinstance(local_vars["result"], pd.DataFrame):
-            # INSPECTION MODE: Show 'result', but keep original 'df' safe
+            # INSPECTION MODE (Don't update history)
             df_display = local_vars["result"]
-            df_modified = df # Original data stays unchanged
             message = f"Executed: {code} (Viewing Mode)"
         else:
+            # ACTION MODE (Update History)
             df_modified = local_vars["df"]
             df_display = df_modified
-            if isinstance(stored_data, dict):
-                data_store[file_id]["current"] = df_modified
-            else:
-                data_store[file_id] = df_modified
-            message = f"Executed: {code} (Data Updated)"
+            
+            # Append to history
+            history.append(df_modified)
+            
+            # MEMORY SAFETY: Limit history to 4 items (Original + 3 Undos)
+            if len(history) > 4:
+                history.pop(1) # Remove oldest change (keep original at 0)
+                
+            message = f"Executed: {code}"
         
         # Send 100 rows back so user can scroll
         preview = df_display.head(100).replace({np.nan: None, np.inf: None, -np.inf: None}).to_dict(orient='records')        
@@ -291,45 +312,26 @@ def download_file(file_id: str):
     if file_id not in data_store:
         raise HTTPException(status_code=404, detail="File not found.")
     
-    # Get data and original filename
-    file_data = data_store[file_id]
+    # Download latest version from history
+    df = data_store[file_id]["history"][-1]
+    original_filename = data_store[file_id].get("filename", "data.csv")
 
-    if isinstance(file_data, dict):
-        df = file_data["current"]
-        original_filename = file_data.get("filename", "data.csv")
-    else:
-        df = file_data
-        original_filename = "data.csv"
-    
-    # Determine format based on extension
     if original_filename.lower().endswith(('.xlsx', '.xls')):
-        # 📊 EXPORT AS EXCEL
         output = io.BytesIO()
         try:
             df.to_excel(output, index=False, engine='openpyxl')
         except:
-             # Fallback to CSV if Excel conversion fails
              df.to_csv(output, index=False)
         output.seek(0)
-        
         media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        # Create smart name: "mydata.xlsx" -> "mydata_clean.xlsx"
         clean_name = os.path.splitext(original_filename)[0] + "_clean.xlsx"
-        
     else:
-        # 📝 EXPORT AS CSV (Default)
         stream = io.StringIO()
         df.to_csv(stream, index=False)
-        
         output = io.BytesIO()
         output.write(stream.getvalue().encode('utf-8'))
         output.seek(0)
-        
         media_type = "text/csv"
         clean_name = os.path.splitext(original_filename)[0] + "_clean.csv"
     
-    return StreamingResponse(
-        output, 
-        media_type=media_type, 
-        headers={"Content-Disposition": f"attachment; filename={clean_name}"}
-    )
+    return StreamingResponse(output, media_type=media_type, headers={"Content-Disposition": f"attachment; filename={clean_name}"})

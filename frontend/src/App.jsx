@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import pako from 'pako'; 
-import { Upload, Play, Download, AlertCircle, X, Terminal, Wand2, Database, ChevronDown, AlignLeft } from 'lucide-react';
+import { Upload, Play, Download, AlertCircle, X, Terminal, Wand2, Database, ChevronDown, AlignLeft, RotateCcw, FilePlus } from 'lucide-react';
 import './App.css'; 
 
 export default function LivingWorkbench() {
@@ -156,6 +156,39 @@ export default function LivingWorkbench() {
     e.target.style.height = `${Math.min(e.target.scrollHeight, 150)}px`;
   };
 
+  // 🆕 UNDO FUNCTION
+  const handleUndo = async () => {
+    setLoading(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/undo`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ file_id: fileId }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.detail);
+      
+      setData(result.preview);
+      setRowsCount(result.total_rows);
+      setColumns(result.columns);
+      setLastCode(null);
+    } catch (err) {
+      setError({ message: "Nothing to undo!" });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 🆕 NEW FILE FUNCTION
+  const handleNewFile = () => {
+    setFileId(null);
+    setData([]);
+    setColumns([]);
+    setQuery('');
+    setLastCode(null);
+    setView('upload');
+  };
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans selection:bg-indigo-100">
       
@@ -222,23 +255,14 @@ export default function LivingWorkbench() {
           <header className="px-6 py-4 flex items-center justify-between bg-white/80 backdrop-blur-md sticky top-0 z-30 border-b border-slate-100">
             <div className="flex items-center gap-2">
               <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center text-white"><Database size={16} /></div>
-              <div>
-                <h2 className="font-semibold text-slate-900">Session Active</h2>
-                <p className="text-xs text-slate-500">{rowsCount} rows • {columns.length} columns</p>
-              </div>
+              <div><h2 className="font-semibold text-slate-900">Session Active</h2><p className="text-xs text-slate-500">{rowsCount} rows • {columns.length} columns</p></div>
             </div>
-            <div className="flex items-center gap-3">
-              {/* 🆕 WRAP TEXT TOGGLE BUTTON */}
-              <button 
-                onClick={() => setWrapText(!wrapText)}
-                className={`p-2 rounded-lg transition-colors ${wrapText ? 'bg-indigo-100 text-indigo-700' : 'text-slate-400 hover:bg-slate-100'}`}
-                title="Toggle Text Wrapping"
-              >
-                <AlignLeft size={20} />
-              </button>
-              <button onClick={handleDownload} className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white text-sm font-medium rounded-lg hover:bg-slate-800 transition-colors shadow-lg shadow-slate-200 cursor-pointer">
-                <Download size={16} /> Export CSV
-              </button>
+            <div className="flex items-center gap-2">
+               {/* 🆕 WRAP TEXT BUTTON */}
+              <button onClick={() => setWrapText(!wrapText)} className={`p-2 rounded-lg transition-colors ${wrapText ? 'bg-indigo-100 text-indigo-700' : 'text-slate-400 hover:bg-slate-100'}`} title="Toggle Text Wrapping"><AlignLeft size={20} /></button>
+               {/* 🆕 NEW FILE BUTTON */}
+              <button onClick={handleNewFile} className="p-2 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-indigo-600 transition-colors" title="Upload New File"><FilePlus size={20} /></button>
+              <button onClick={handleDownload} className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white text-sm font-medium rounded-lg hover:bg-slate-800 transition-colors shadow-lg shadow-slate-200 cursor-pointer"><Download size={16} /> Export</button>
             </div>
           </header>
 
@@ -308,23 +332,13 @@ export default function LivingWorkbench() {
           <div className="fixed bottom-8 left-1/2 -translate-x-1/2 w-full max-w-2xl px-4 z-40">
             <div className={`relative bg-white/90 backdrop-blur-xl p-2 rounded-2xl border border-white/20 shadow-2xl shadow-indigo-500/10 transition-all duration-300 ring-1 ring-black/5 ${loading ? 'scale-95 opacity-80' : 'scale-100 opacity-100'}`}>
               <form onSubmit={(e) => { e.preventDefault(); handleCommand(); }} className="flex items-end gap-2">
-                <div className="pl-3 pb-3 text-indigo-500">
-                  {loading ? <div className="animate-spin w-5 h-5 border-2 border-indigo-500 border-t-transparent rounded-full" /> : <Terminal size={20} />}
-                </div>
-                <textarea
-                  ref={inputRef}
-                  value={query}
-                  onChange={handleInput}
-                  onKeyDown={handleKeyDown}
-                  placeholder="Ask CleanSlate to transform your data..."
-                  rows={1}
-                  className="flex-1 bg-transparent border-none text-slate-800 placeholder:text-slate-400 focus:ring-0 text-lg py-3 px-2 font-medium outline-none resize-none max-h-[150px] overflow-y-auto"
-                  autoFocus
-                  disabled={loading}
-                />
-                <button type="submit" disabled={loading || !query.trim()} className="mb-1 p-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-50 disabled:hover:bg-indigo-600 transition-colors shadow-md cursor-pointer h-[52px] w-[52px] flex items-center justify-center">
-                  <Play size={20} fill="currentColor" />
-                </button>
+                <div className="pl-3 pb-3 text-indigo-500">{loading ? <div className="animate-spin w-5 h-5 border-2 border-indigo-500 border-t-transparent rounded-full" /> : <Terminal size={20} />}</div>
+                <textarea ref={inputRef} value={query} onChange={(e) => { setQuery(e.target.value); e.target.style.height = 'auto'; e.target.style.height = `${Math.min(e.target.scrollHeight, 150)}px`; }} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleCommand(); }}} placeholder="Ask CleanSlate to transform your data..." rows={1} className="flex-1 bg-transparent border-none text-slate-800 placeholder:text-slate-400 focus:ring-0 text-lg py-3 px-2 font-medium outline-none resize-none max-h-[150px] overflow-y-auto" autoFocus disabled={loading} />
+                
+                {/* 🆕 UNDO BUTTON */}
+                <button type="button" onClick={handleUndo} disabled={loading} className="mb-1 p-3 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-colors cursor-pointer" title="Undo Last Action"><RotateCcw size={20} /></button>
+                
+                <button type="submit" disabled={loading || !query.trim()} className="mb-1 p-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-50 disabled:hover:bg-indigo-600 transition-colors shadow-md cursor-pointer h-[52px] w-[52px] flex items-center justify-center"><Play size={20} fill="currentColor" /></button>
               </form>
             </div>
             <div className="text-center mt-3"><p className="text-xs text-slate-400 font-medium tracking-wide">PRO TIP: SHIFT+ENTER FOR NEW LINE • TRY "RESET" TO UNDO</p></div>
