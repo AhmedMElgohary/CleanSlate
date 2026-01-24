@@ -99,7 +99,7 @@ async def upload_file(request: Request):
         data_store[file_id] = {
             "original": df.copy(), # SAFE BACKUP
             "current": df,         # WORKING COPY
-            "filename": filename
+            "filename": filename   # REMEMBER FILE TYPE
         }
         
         # Send 100 rows for scrolling
@@ -143,7 +143,7 @@ def process_command(request: CommandRequest):
         }
     
     #Normal flow
-    df = data_store[file_id]
+    df = data_store[file_id]["current"]
     
     # Initialize 'code' so it exists even if the AI fails early
     code = "No code generated"
@@ -233,7 +233,7 @@ def process_command(request: CommandRequest):
 
         # 4. Execute with 'pd' passed in
         local_vars = {
-            "df": df, 
+            "df": df.copy(), # Work on a copy first 
             "pd": pd, 
             "pandas": pd, 
             "np": np, 
