@@ -41,20 +41,64 @@ def health_check():
 @app.post("/api/upload")
 async def upload_file(request: Request):
     try:
+        # 1. Get Filename & Content
         filename = request.headers.get("X-Filename", "uploaded_file.csv")
         body = await request.body()
         
-        # Decompression Logic
+        # 2. Decompression Logic
         try:
             content = gzip.decompress(body)
         except:
             content = body
             
-        df = pd.read_csv(io.BytesIO(content), skipinitialspace=True)
+        # 3. Smart Reader
+        file_stream = io.BytesIO(content)
+        df = None
+        error_log = []
+
+        # Strategy A: Trust the filename extension first
+        if filename.lower().endswith(('.xlsx', '.xls')):
+            try:
+                df = pd.read_excel(file_stream)
+            except Exception as e:
+                error_log.append(f"Excel read failed: {str(e)}")
         
+        # Strategy B: If A didn't work (or filename was wrong), try CSV (UTF-8)
+        if df is None:
+            try:
+                file_stream.seek(0) # Reset pointer
+                df = pd.read_csv(file_stream, skipinitialspace=True)
+            except UnicodeDecodeError:
+                # It implies the file is actually Binary (Excel), not Text.
+                error_log.append("CSV UTF-8 failed (Binary detected)")
+            except Exception as e:
+                error_log.append(f"CSV read failed: {str(e)}")
+
+        # Strategy C: If still nothing, it might be Excel masquerading as CSV
+        if df is None:
+            try:
+                file_stream.seek(0)
+                df = pd.read_excel(file_stream)
+            except Exception as e:
+                 error_log.append(f"Excel fallback failed: {str(e)}")
+                 
+        # Strategy D: Last Resort - CSV with 'latin1' encoding (for old files)
+        if df is None:
+            try:
+                file_stream.seek(0)
+                df = pd.read_csv(file_stream, encoding='latin1')
+            except Exception as e:
+                error_log.append(f"CSV Latin1 failed: {str(e)}")
+
+        # 4. Final Check
+        if df is None:
+             raise Exception(f"Could not read file. Attempts: {'; '.join(error_log)}")
+
+        # 5. Success! Save & Return
         file_id = str(uuid.uuid4())
         data_store[file_id] = df
         
+        # Send 100 rows for scrolling
         preview = df.head(100).replace({float('nan'): None}).to_dict(orient='records')
         
         return {
@@ -68,7 +112,6 @@ async def upload_file(request: Request):
         
     except Exception as e:
         print(f"Upload Error: {e}")
-        # Helpful error if openpyxl is missing
         if "openpyxl" in str(e):
              raise HTTPException(status_code=500, detail="Server missing Excel support. Please add 'openpyxl' to requirements.txt")
         raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
