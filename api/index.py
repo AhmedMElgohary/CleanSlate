@@ -103,7 +103,7 @@ async def upload_file(request: Request):
         }
         
         # Send 100 rows for scrolling
-        preview = df.head(100).replace({float('nan'): None}).to_dict(orient='records')
+        preview = df.head(100).replace({np.nan: None, np.inf: None, -np.inf: None}).to_dict(orient='records')        
         
         return {
             "file_id": file_id,
@@ -123,23 +123,24 @@ async def upload_file(request: Request):
 @app.post("/api/process")
 def process_command(request: CommandRequest):
     file_id = request.file_id
-    query = request.query
+    query = request.query.strip().lower()
     
     if file_id not in data_store:
         raise HTTPException(status_code=404, detail="Session expired. Please upload again.")
     
-    # 🔄 RESET LOGIC
-    if query in ["reset", "restart", "restore", "reset data", "restore original", "start over"]:
-        try:
-            # Check if we have the dictionary structure
-            if isinstance(data_store[file_id], dict):
+    # RESET LOGIC
+    try:
+        if query in ["reset", "restart", "restore", "reset data", "restore original", "start over"]:
+            stored_data = data_store[file_id]
+            
+            if isinstance(stored_data, dict):
                 data_store[file_id]["current"] = data_store[file_id]["original"].copy()
                 df_reset = data_store[file_id]["current"]
             else:
-                # Fallback for old sessions (shouldn't happen on new deploy)
-                df_reset = data_store[file_id] 
-                
-            preview = df_reset.head(100).replace({float('nan'): None}).to_dict(orient='records')
+                df_reset = stored_data 
+            
+            preview = df_reset.head(100).replace({np.nan: None, np.inf: None, -np.inf: None}).to_dict(orient='records')
+            
             return {
                 "message": "🔄 Success! Data has been reset.",
                 "generated_code": "# Reset executed",
@@ -147,24 +148,13 @@ def process_command(request: CommandRequest):
                 "preview": preview,
                 "columns": list(df_reset.columns)
             }
-        except Exception as e:
-             raise HTTPException(status_code=500, detail=f"Reset failed: {str(e)}")
-    
-    
-    # Initialize 'code' so it exists even if the AI fails early
-    code = "No code generated"
 
-    try:
-        # Get DataFrame SAFELY inside the try block
         stored_data = data_store[file_id]
-        
         if isinstance(stored_data, dict):
             df = stored_data["current"]
         else:
-            # Handle legacy/broken state gracefully
             df = stored_data
 
-        # 1. SMART CONTEXT
         buffer = io.StringIO()
         df.info(buf=buffer)
         df_info = buffer.getvalue()
@@ -172,7 +162,6 @@ def process_command(request: CommandRequest):
         head_rows = df.head(5).to_string()
         tail_rows = df.tail(5).to_string()
         
-        # Safe sampling for description (don't crash on small files)
         try:
             description = df.describe().to_string()
         except:
@@ -263,22 +252,23 @@ def process_command(request: CommandRequest):
             df_modified = df # Original data stays unchanged
             message = f"Executed: {code} (Viewing Mode)"
         else:
-            # ACTION MODE: The AI modified 'df'
             df_modified = local_vars["df"]
             df_display = df_modified
-            # Update the main storage only in Action Mode
-            data_store[file_id] = df_modified
+            if isinstance(stored_data, dict):
+                data_store[file_id]["current"] = df_modified
+            else:
+                data_store[file_id] = df_modified
             message = f"Executed: {code} (Data Updated)"
         
         # Send 100 rows back so user can scroll
-        preview = df_display.head(100).replace({float('nan'): None}).to_dict(orient='records')        
+        preview = df_display.head(100).replace({np.nan: None, np.inf: None, -np.inf: None}).to_dict(orient='records')        
         
         return {
             "message": f"Executed: {code}",
             "generated_code": code,
-            "total_rows": df_modified.shape[0],
+            "total_rows": df_display.shape[0],
             "preview": preview,
-            "columns": list(df_modified.columns)
+            "columns": list(df_display.columns)
         }
 
     except Exception as e:
@@ -303,15 +293,23 @@ def download_file(file_id: str):
     
     # Get data and original filename
     file_data = data_store[file_id]
-    df = file_data["current"]
-    original_filename = file_data.get("filename", "data.csv")
+
+    if isinstance(file_data, dict):
+        df = file_data["current"]
+        original_filename = file_data.get("filename", "data.csv")
+    else:
+        df = file_data
+        original_filename = "data.csv"
     
     # Determine format based on extension
     if original_filename.lower().endswith(('.xlsx', '.xls')):
         # 📊 EXPORT AS EXCEL
         output = io.BytesIO()
-        # Use openpyxl engine
-        df.to_excel(output, index=False, engine='openpyxl')
+        try:
+            df.to_excel(output, index=False, engine='openpyxl')
+        except:
+             # Fallback to CSV if Excel conversion fails
+             df.to_csv(output, index=False)
         output.seek(0)
         
         media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"

@@ -26,7 +26,6 @@ export default function LivingWorkbench() {
   : "http://127.0.0.1:8000/api";
 
   // 🔄 FOCUS MANAGEMENT
-  // Whenever loading finishes, force focus back to input
   useEffect(() => {
     if (!loading && view === 'workbench' && inputRef.current) {
       inputRef.current.focus();
@@ -144,7 +143,6 @@ export default function LivingWorkbench() {
     window.location.href = `${API_BASE_URL}/download/${fileId}`;
   };
 
-  // 🎹 Handle Enter Key in Textarea
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -152,7 +150,6 @@ export default function LivingWorkbench() {
     }
   };
 
-  // 📏 Auto-resize Textarea
   const handleInput = (e) => {
     setQuery(e.target.value);
     e.target.style.height = 'auto';
@@ -215,7 +212,6 @@ export default function LivingWorkbench() {
               </p>
               <p className="text-sm text-slate-400">or click to browse</p>
             </div>
-            {/* 🆕 ACCEPT EXCEL FILES */}
             <input type="file" className="hidden" accept=".csv, .xlsx, .xls" onChange={handleFileChange} disabled={loading} />
           </label>
         </div>
@@ -232,7 +228,7 @@ export default function LivingWorkbench() {
               </div>
             </div>
             <div className="flex items-center gap-3">
-              {/* 🆕 WRAP TEXT TOGGLE */}
+              {/* 🆕 WRAP TEXT TOGGLE BUTTON */}
               <button 
                 onClick={() => setWrapText(!wrapText)}
                 className={`p-2 rounded-lg transition-colors ${wrapText ? 'bg-indigo-100 text-indigo-700' : 'text-slate-400 hover:bg-slate-100'}`}
@@ -281,7 +277,6 @@ export default function LivingWorkbench() {
                     {data.slice(0, visibleRows).map((row, i) => (
                       <tr key={i} className="hover:bg-slate-50 transition-colors">
                         {columns.map((col) => (
-                          // 🆕 APPLY WRAP CLASS CONDITIONALLY
                           <td key={`${i}-${col}`} className={`px-6 py-4 text-slate-600 min-w-[150px] ${wrapText ? 'whitespace-normal break-words' : 'whitespace-nowrap'}`}>
                             {row[col]}
                           </td>
@@ -310,15 +305,12 @@ export default function LivingWorkbench() {
             </div>
           </main>
 
-          {/* 🆕 CHATGPT STYLE INPUT BAR */}
           <div className="fixed bottom-8 left-1/2 -translate-x-1/2 w-full max-w-2xl px-4 z-40">
             <div className={`relative bg-white/90 backdrop-blur-xl p-2 rounded-2xl border border-white/20 shadow-2xl shadow-indigo-500/10 transition-all duration-300 ring-1 ring-black/5 ${loading ? 'scale-95 opacity-80' : 'scale-100 opacity-100'}`}>
               <form onSubmit={(e) => { e.preventDefault(); handleCommand(); }} className="flex items-end gap-2">
                 <div className="pl-3 pb-3 text-indigo-500">
                   {loading ? <div className="animate-spin w-5 h-5 border-2 border-indigo-500 border-t-transparent rounded-full" /> : <Terminal size={20} />}
                 </div>
-                
-                {/* 🆕 AUTO-RESIZING TEXTAREA */}
                 <textarea
                   ref={inputRef}
                   value={query}
@@ -330,7 +322,6 @@ export default function LivingWorkbench() {
                   autoFocus
                   disabled={loading}
                 />
-                
                 <button type="submit" disabled={loading || !query.trim()} className="mb-1 p-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-50 disabled:hover:bg-indigo-600 transition-colors shadow-md cursor-pointer h-[52px] w-[52px] flex items-center justify-center">
                   <Play size={20} fill="currentColor" />
                 </button>
