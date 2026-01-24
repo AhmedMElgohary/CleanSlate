@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import pako from 'pako'; 
-import { Upload, Play, Download, AlertCircle, X, Terminal, Wand2, Database, ChevronDown } from 'lucide-react';
+import { Upload, Play, Download, AlertCircle, X, Terminal, Wand2, Database, ChevronDown, AlignLeft } from 'lucide-react';
 import './App.css'; 
 
 export default function LivingWorkbench() {
@@ -15,20 +15,30 @@ export default function LivingWorkbench() {
   const [isDragging, setIsDragging] = useState(false);
   const [lastCode, setLastCode] = useState(null);
   
-  // 🆕 NEW: Pagination State
+  // 🆕 NEW STATES
   const [visibleRows, setVisibleRows] = useState(10); 
+  const [wrapText, setWrapText] = useState(false); // Toggle for text wrapping
+  const inputRef = useRef(null); // Reference to the input box
 
   // Configuration
   const API_BASE_URL = import.meta.env.PROD 
   ? "/api" 
   : "http://127.0.0.1:8000/api";
 
+  // 🔄 FOCUS MANAGEMENT
+  // Whenever loading finishes, force focus back to input
+  useEffect(() => {
+    if (!loading && view === 'workbench' && inputRef.current) {
+      inputRef.current.focus();
+    }
+  }, [loading, view]);
+
   const processFile = async (file) => {
     if (!file) return;
 
     setLoading(true);
     setError(null);
-    setVisibleRows(10); // Reset pagination on new file
+    setVisibleRows(10); 
 
     try {
       const fileBuffer = await file.arrayBuffer();
@@ -114,6 +124,10 @@ export default function LivingWorkbench() {
       setColumns(result.columns);
       if (result.generated_code) setLastCode(result.generated_code);
       setQuery(''); 
+      
+      // Reset textarea height
+      if(inputRef.current) inputRef.current.style.height = 'auto';
+
     } catch (err) {
       console.error("Command Error:", err);
       setError({ 
@@ -128,6 +142,21 @@ export default function LivingWorkbench() {
   const handleDownload = () => {
     if (!fileId) return;
     window.location.href = `${API_BASE_URL}/download/${fileId}`;
+  };
+
+  // 🎹 Handle Enter Key in Textarea
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleCommand();
+    }
+  };
+
+  // 📏 Auto-resize Textarea
+  const handleInput = (e) => {
+    setQuery(e.target.value);
+    e.target.style.height = 'auto';
+    e.target.style.height = `${Math.min(e.target.scrollHeight, 150)}px`;
   };
 
   return (
@@ -182,10 +211,11 @@ export default function LivingWorkbench() {
                 {loading ? <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div> : <Upload size={32} />}
               </div>
               <p className="mb-2 text-xl font-medium text-slate-700 group-hover:text-indigo-700">
-                {isDragging ? 'Drop it like it\'s hot!' : 'Drop your CSV here'}
+                {isDragging ? 'Drop it like it\'s hot!' : 'Drop your CSV or Excel here'}
               </p>
               <p className="text-sm text-slate-400">or click to browse</p>
             </div>
+            {/* 🆕 ACCEPT EXCEL FILES */}
             <input type="file" className="hidden" accept=".csv, .xlsx, .xls" onChange={handleFileChange} disabled={loading} />
           </label>
         </div>
@@ -201,9 +231,19 @@ export default function LivingWorkbench() {
                 <p className="text-xs text-slate-500">{rowsCount} rows • {columns.length} columns</p>
               </div>
             </div>
-            <button onClick={handleDownload} className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white text-sm font-medium rounded-lg hover:bg-slate-800 transition-colors shadow-lg shadow-slate-200 cursor-pointer">
-              <Download size={16} /> Export CSV
-            </button>
+            <div className="flex items-center gap-3">
+              {/* 🆕 WRAP TEXT TOGGLE */}
+              <button 
+                onClick={() => setWrapText(!wrapText)}
+                className={`p-2 rounded-lg transition-colors ${wrapText ? 'bg-indigo-100 text-indigo-700' : 'text-slate-400 hover:bg-slate-100'}`}
+                title="Toggle Text Wrapping"
+              >
+                <AlignLeft size={20} />
+              </button>
+              <button onClick={handleDownload} className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white text-sm font-medium rounded-lg hover:bg-slate-800 transition-colors shadow-lg shadow-slate-200 cursor-pointer">
+                <Download size={16} /> Export CSV
+              </button>
+            </div>
           </header>
 
           <main className="flex-1 p-6 max-w-7xl mx-auto w-full pb-32">
@@ -233,16 +273,18 @@ export default function LivingWorkbench() {
                   <thead className="bg-slate-50 border-b border-slate-100">
                     <tr>
                       {columns.map((col) => (
-                        <th key={col} className="px-6 py-4 font-semibold text-slate-700 whitespace-nowrap">{col}</th>
+                        <th key={col} className="px-6 py-4 font-semibold text-slate-700 whitespace-nowrap min-w-[150px]">{col}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {/* 🆕 SHOW ONLY VISIBLE ROWS */}
                     {data.slice(0, visibleRows).map((row, i) => (
                       <tr key={i} className="hover:bg-slate-50 transition-colors">
                         {columns.map((col) => (
-                          <td key={`${i}-${col}`} className="px-6 py-4 text-slate-600 whitespace-nowrap">{row[col]}</td>
+                          // 🆕 APPLY WRAP CLASS CONDITIONALLY
+                          <td key={`${i}-${col}`} className={`px-6 py-4 text-slate-600 min-w-[150px] ${wrapText ? 'whitespace-normal break-words' : 'whitespace-nowrap'}`}>
+                            {row[col]}
+                          </td>
                         ))}
                       </tr>
                     ))}
@@ -250,12 +292,11 @@ export default function LivingWorkbench() {
                 </table>
               </div>
               
-              {/* 🆕 SHOW MORE BUTTON */}
               {data.length > visibleRows && (
                 <div className="p-4 border-t border-slate-100 bg-slate-50 flex justify-center">
                   <button 
                     onClick={() => setVisibleRows(prev => prev + 20)}
-                    className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 shadow-sm rounded-full text-sm font-medium text-slate-600 hover:bg-slate-50 hover:text-indigo-600 transition-all"
+                    className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 shadow-sm rounded-full text-sm font-medium text-slate-600 hover:bg-slate-50 hover:text-indigo-600 transition-all cursor-pointer"
                   >
                     <ChevronDown size={16} />
                     Show {Math.min(20, data.length - visibleRows)} More Rows
@@ -269,17 +310,33 @@ export default function LivingWorkbench() {
             </div>
           </main>
 
+          {/* 🆕 CHATGPT STYLE INPUT BAR */}
           <div className="fixed bottom-8 left-1/2 -translate-x-1/2 w-full max-w-2xl px-4 z-40">
             <div className={`relative bg-white/90 backdrop-blur-xl p-2 rounded-2xl border border-white/20 shadow-2xl shadow-indigo-500/10 transition-all duration-300 ring-1 ring-black/5 ${loading ? 'scale-95 opacity-80' : 'scale-100 opacity-100'}`}>
-              <form onSubmit={(e) => { e.preventDefault(); handleCommand(); }} className="flex items-center gap-2">
-                <div className="pl-3 text-indigo-500">
+              <form onSubmit={(e) => { e.preventDefault(); handleCommand(); }} className="flex items-end gap-2">
+                <div className="pl-3 pb-3 text-indigo-500">
                   {loading ? <div className="animate-spin w-5 h-5 border-2 border-indigo-500 border-t-transparent rounded-full" /> : <Terminal size={20} />}
                 </div>
-                <input type="text" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Ask CleanSlate to transform your data..." className="flex-1 bg-transparent border-none text-slate-800 placeholder:text-slate-400 focus:ring-0 text-lg py-3 px-2 font-medium outline-none" autoFocus disabled={loading} />
-                <button type="submit" disabled={loading || !query.trim()} className="p-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-50 disabled:hover:bg-indigo-600 transition-colors shadow-md cursor-pointer"><Play size={20} fill="currentColor" /></button>
+                
+                {/* 🆕 AUTO-RESIZING TEXTAREA */}
+                <textarea
+                  ref={inputRef}
+                  value={query}
+                  onChange={handleInput}
+                  onKeyDown={handleKeyDown}
+                  placeholder="Ask CleanSlate to transform your data..."
+                  rows={1}
+                  className="flex-1 bg-transparent border-none text-slate-800 placeholder:text-slate-400 focus:ring-0 text-lg py-3 px-2 font-medium outline-none resize-none max-h-[150px] overflow-y-auto"
+                  autoFocus
+                  disabled={loading}
+                />
+                
+                <button type="submit" disabled={loading || !query.trim()} className="mb-1 p-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-50 disabled:hover:bg-indigo-600 transition-colors shadow-md cursor-pointer h-[52px] w-[52px] flex items-center justify-center">
+                  <Play size={20} fill="currentColor" />
+                </button>
               </form>
             </div>
-            <div className="text-center mt-3"><p className="text-xs text-slate-400 font-medium tracking-wide">PRO TIP: TRY "REMOVE DUPLICATES" OR "FIX DATES"</p></div>
+            <div className="text-center mt-3"><p className="text-xs text-slate-400 font-medium tracking-wide">PRO TIP: SHIFT+ENTER FOR NEW LINE • TRY "RESET" TO UNDO</p></div>
           </div>
         </div>
       )}

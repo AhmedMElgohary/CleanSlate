@@ -96,7 +96,11 @@ async def upload_file(request: Request):
 
         # 5. Success! Save & Return
         file_id = str(uuid.uuid4())
-        data_store[file_id] = df
+        data_store[file_id] = {
+            "original": df.copy(), # SAFE BACKUP
+            "current": df,         # WORKING COPY
+            "filename": filename
+        }
         
         # Send 100 rows for scrolling
         preview = df.head(100).replace({float('nan'): None}).to_dict(orient='records')
@@ -124,6 +128,21 @@ def process_command(request: CommandRequest):
     if file_id not in data_store:
         raise HTTPException(status_code=404, detail="Session expired. Please upload again.")
     
+    # 🆕 HARDCODED RESET LOGIC
+    if query in ["reset", "restart", "restore", "reset data", "restore original", "start over"]:
+        data_store[file_id]["current"] = data_store[file_id]["original"].copy()
+        df_reset = data_store[file_id]["current"]
+        preview = df_reset.head(100).replace({float('nan'): None}).to_dict(orient='records')
+        
+        return {
+            "message": "🔄 Success! Data has been reset to the original uploaded version.",
+            "generated_code": "# Reset command executed\ndf = df_original.copy()",
+            "total_rows": df_reset.shape[0],
+            "preview": preview,
+            "columns": list(df_reset.columns)
+        }
+    
+    #Normal flow
     df = data_store[file_id]
     
     # Initialize 'code' so it exists even if the AI fails early
@@ -221,6 +240,7 @@ def process_command(request: CommandRequest):
             "numpy": np
         } 
         exec(code, {}, local_vars)
+        
         # Did the AI create a 'result' variable?
         if "result" in local_vars and isinstance(local_vars["result"], pd.DataFrame):
             # INSPECTION MODE: Show 'result', but keep original 'df' safe
@@ -266,17 +286,37 @@ def download_file(file_id: str):
     if file_id not in data_store:
         raise HTTPException(status_code=404, detail="File not found.")
     
-    df = data_store[file_id]
+    # Get data and original filename
+    file_data = data_store[file_id]
+    df = file_data["current"]
+    original_filename = file_data.get("filename", "data.csv")
     
-    stream = io.StringIO()
-    df.to_csv(stream, index=False)
-    
-    response = io.BytesIO()
-    response.write(stream.getvalue().encode('utf-8'))
-    response.seek(0)
+    # Determine format based on extension
+    if original_filename.lower().endswith(('.xlsx', '.xls')):
+        # 📊 EXPORT AS EXCEL
+        output = io.BytesIO()
+        # Use openpyxl engine
+        df.to_excel(output, index=False, engine='openpyxl')
+        output.seek(0)
+        
+        media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        # Create smart name: "mydata.xlsx" -> "mydata_clean.xlsx"
+        clean_name = os.path.splitext(original_filename)[0] + "_clean.xlsx"
+        
+    else:
+        # 📝 EXPORT AS CSV (Default)
+        stream = io.StringIO()
+        df.to_csv(stream, index=False)
+        
+        output = io.BytesIO()
+        output.write(stream.getvalue().encode('utf-8'))
+        output.seek(0)
+        
+        media_type = "text/csv"
+        clean_name = os.path.splitext(original_filename)[0] + "_clean.csv"
     
     return StreamingResponse(
-        response, 
-        media_type="text/csv", 
-        headers={"Content-Disposition": f"attachment; filename=clean_data.csv"}
+        output, 
+        media_type=media_type, 
+        headers={"Content-Disposition": f"attachment; filename={clean_name}"}
     )
