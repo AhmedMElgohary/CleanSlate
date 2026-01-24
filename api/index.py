@@ -68,6 +68,9 @@ async def upload_file(request: Request):
         
     except Exception as e:
         print(f"Upload Error: {e}")
+        # Helpful error if openpyxl is missing
+        if "openpyxl" in str(e):
+             raise HTTPException(status_code=500, detail="Server missing Excel support. Please add 'openpyxl' to requirements.txt")
         raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
 
 @app.post("/api/process")
@@ -98,7 +101,7 @@ def process_command(request: CommandRequest):
         except:
             description = "No numeric data"
         
-        # 2. STRICT SYSTEM PROMPT (The Fix for Reliability) 🛡️
+        # 2. STRICT SYSTEM PROMPT
         system_prompt = f"""
         You are a Python Data Expert. 
         DataFrame Name: 'df'
@@ -118,7 +121,19 @@ def process_command(request: CommandRequest):
         # USER REQUEST: "{query}"
         
         # YOUR TASK:
-        Write Python code to clean or transform 'df' in-place.
+        Write Python code to process 'df'.
+
+        # 🚦 MODES OF OPERATION:
+        
+        MODE A: ACTION (Clean, Transform, Edit)
+        - If the user wants to CHANGE the data (e.g. "remove duplicates", "fix dates"):
+        - Apply changes to 'df' directly in-place.
+        - Do NOT create a 'result' variable.
+        
+        MODE B: INSPECTION (Find, Show, Filter)
+        - If the user wants to SEE specific rows (e.g. "show empty rows", "find outliers"):
+        - Create a NEW DataFrame named 'result' containing only those rows.
+        - Do NOT modify 'df'.
         
         # ⚠️ CRITICAL RULES:
         1. IF DATES (Convert/Format):
@@ -163,9 +178,21 @@ def process_command(request: CommandRequest):
             "numpy": np
         } 
         exec(code, {}, local_vars)
-        df_modified = local_vars["df"]
+        # Did the AI create a 'result' variable?
+        if "result" in local_vars and isinstance(local_vars["result"], pd.DataFrame):
+            # INSPECTION MODE: Show 'result', but keep original 'df' safe
+            df_display = local_vars["result"]
+            df_modified = df # Original data stays unchanged
+            message = f"Executed: {code} (Viewing Mode)"
+        else:
+            # ACTION MODE: The AI modified 'df'
+            df_modified = local_vars["df"]
+            df_display = df_modified
+            # Update the main storage only in Action Mode
+            data_store[file_id] = df_modified
+            message = f"Executed: {code} (Data Updated)"
         
-        data_store[file_id] = df_modified
+        # Send 100 rows back so user can scroll
         preview = df_modified.head(100).replace({float('nan'): None}).to_dict(orient='records')
         
         return {
