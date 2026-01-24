@@ -128,28 +128,43 @@ def process_command(request: CommandRequest):
     if file_id not in data_store:
         raise HTTPException(status_code=404, detail="Session expired. Please upload again.")
     
-    # 🆕 HARDCODED RESET LOGIC
+    # 🔄 RESET LOGIC
     if query in ["reset", "restart", "restore", "reset data", "restore original", "start over"]:
-        data_store[file_id]["current"] = data_store[file_id]["original"].copy()
-        df_reset = data_store[file_id]["current"]
-        preview = df_reset.head(100).replace({float('nan'): None}).to_dict(orient='records')
-        
-        return {
-            "message": "🔄 Success! Data has been reset to the original uploaded version.",
-            "generated_code": "# Reset command executed\ndf = df_original.copy()",
-            "total_rows": df_reset.shape[0],
-            "preview": preview,
-            "columns": list(df_reset.columns)
-        }
+        try:
+            # Check if we have the dictionary structure
+            if isinstance(data_store[file_id], dict):
+                data_store[file_id]["current"] = data_store[file_id]["original"].copy()
+                df_reset = data_store[file_id]["current"]
+            else:
+                # Fallback for old sessions (shouldn't happen on new deploy)
+                df_reset = data_store[file_id] 
+                
+            preview = df_reset.head(100).replace({float('nan'): None}).to_dict(orient='records')
+            return {
+                "message": "🔄 Success! Data has been reset.",
+                "generated_code": "# Reset executed",
+                "total_rows": df_reset.shape[0],
+                "preview": preview,
+                "columns": list(df_reset.columns)
+            }
+        except Exception as e:
+             raise HTTPException(status_code=500, detail=f"Reset failed: {str(e)}")
     
-    #Normal flow
-    df = data_store[file_id]["current"]
     
     # Initialize 'code' so it exists even if the AI fails early
     code = "No code generated"
 
     try:
-        # Instead of random rows, we show the Structure + The Junk + The Stats
+        # Get DataFrame SAFELY inside the try block
+        stored_data = data_store[file_id]
+        
+        if isinstance(stored_data, dict):
+            df = stored_data["current"]
+        else:
+            # Handle legacy/broken state gracefully
+            df = stored_data
+
+        # 1. SMART CONTEXT
         buffer = io.StringIO()
         df.info(buf=buffer)
         df_info = buffer.getvalue()
