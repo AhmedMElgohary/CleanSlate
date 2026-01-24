@@ -193,7 +193,7 @@ def process_command(request: CommandRequest):
             message = f"Executed: {code} (Data Updated)"
         
         # Send 100 rows back so user can scroll
-        preview = df_modified.head(100).replace({float('nan'): None}).to_dict(orient='records')
+        preview = df_display.head(100).replace({float('nan'): None}).to_dict(orient='records')        
         
         return {
             "message": f"Executed: {code}",

@@ -186,7 +186,7 @@ export default function LivingWorkbench() {
               </p>
               <p className="text-sm text-slate-400">or click to browse</p>
             </div>
-            <input type="file" className="hidden" accept=".csv" onChange={handleFileChange} disabled={loading} />
+            <input type="file" className="hidden" accept=".csv, .xlsx, .xls" onChange={handleFileChange} disabled={loading} />
           </label>
         </div>
       )}
